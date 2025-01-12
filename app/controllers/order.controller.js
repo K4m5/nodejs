@@ -5,22 +5,23 @@ const Coupon = require('../models/coupon.model');
 const qs = require('qs');
 const crypto = require('crypto');
 const vnpayConfig = require('../config/vnpay');
+const moment = require("moment");
 
 function sortObject(obj) {
-	let sorted = {};
-	let str = [];
-	let key;
-	for (key in obj){
-		if (obj.hasOwnProperty(key)) {
-		str.push(encodeURIComponent(key));
-		}
-	}
-	str.sort();
+    let sorted = {};
+    let str = [];
+    let key;
+    for (key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        str.push(encodeURIComponent(key));
+      }
+    }
+    str.sort();
     for (key = 0; key < str.length; key++) {
-        sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
+      sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
     }
     return sorted;
-}
+  }
 class OrderController {
     // [GET] /orders
     async index(req, res) {
@@ -258,7 +259,7 @@ class OrderController {
     async vnpay(req, res) {
         try {
             const {coupon, ship, distance, timeShip, address, phone} = req.body;
-
+            process.env.TZ = "Asia/Ho_Chi_Minh";
             var ipAddr = req.headers['x-forwarded-for'] ||
             req.connection.remoteAddress ||
             req.socket.remoteAddress ||
@@ -276,8 +277,8 @@ class OrderController {
         
             var date = new Date();
         
-            var createDate = dateFormat(date, 'yyyymmddHHmmss');
-            var orderId = dateFormat(date, 'HHmmss');
+            let createDate = moment(date).format("YYYYMMDDHHmmss");
+            let orderId = moment(date).format("DDHHmmss");
             var amount = parseInt(req.body.amount) + parseInt(ship);
             var bankCode = req.body.bankCode;
             
@@ -300,9 +301,7 @@ class OrderController {
             vnp_Params['vnp_ReturnUrl'] = returnUrl;
             vnp_Params['vnp_IpAddr'] = ipAddr;
             vnp_Params['vnp_CreateDate'] = createDate;
-            if(bankCode !== null && bankCode !== ''){
-                vnp_Params['vnp_BankCode'] = bankCode;
-            }
+          
         
             vnp_Params = sortObject(vnp_Params);
         
