@@ -79,7 +79,12 @@ class StatisticController {
         try {
             const today = new Date();
             const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-            const startOfWeek = new Date(today.setDate(today.getDate() - today.getDay()));
+            const dayOfWeek = today.getDay();
+            const daysSinceMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - daysSinceMonday);
+            startOfWeek.setHours(0, 0, 0, 0);
+
             const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
             const [dailyRevenue, weeklyRevenue, monthlyRevenue] = await Promise.all([
@@ -190,59 +195,72 @@ class StatisticController {
     //[GET] /statistics/revenue_day_of_month
     async revenue_day_of_month(req, res) {
         try {
-            // Lấy tháng từ query, nếu không có thì mặc định là tháng hiện tại
-            const month = req.query.month || new Date().getMonth() + 1; // MongoDB sử dụng tháng 0-11, do đó cộng thêm 1
-            const year = req.query.year || new Date().getFullYear(); // Lấy năm từ query, mặc định năm hiện tại
+            // Lấy tháng và năm từ query, nếu không có thì mặc định là tháng & năm hiện tại
+            const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+            const year = parseInt(req.query.year) || new Date().getFullYear();
     
-            // Tính ngày bắt đầu và kết thúc của tháng
-            const startDate = new Date(year, month - 1, 1); // Ngày 1 của tháng
-            const endDate = new Date(year, month, 0); // Ngày cuối của tháng
+            // Xác định ngày bắt đầu và kết thúc tháng theo UTC
+            const startDate = new Date(Date.UTC(year, month - 1, 1)); // Ngày 1 của tháng (UTC)
+            const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59)); // Ngày cuối cùng của tháng (UTC)
     
-            // Lấy tổng doanh thu theo từng ngày trong tháng
+            // Truy vấn tổng doanh thu theo từng ngày trong tháng theo múi giờ Việt Nam
             const revenueByDay = await Order.aggregate([
                 {
                     $match: {
-                        created_at: { // Lọc các đơn hàng trong tháng nhất định
+                        created_at: { 
                             $gte: startDate,
-                            $lt: endDate,
+                            $lte: endDate
                         },
-                    },
-                },
-                {
-                    $group: {
-                        _id: { $dayOfMonth: "$created_at" }, // Nhóm theo ngày trong tháng
-                        totalRevenue: { $sum: "$amount" }, // Tổng doanh thu theo ngày
-                    },
-                },
-                {
-                    $sort: { _id: 1 }, // Sắp xếp theo thứ tự ngày trong tháng
+                        status: "Completed" // Chỉ tính đơn hàng đã hoàn thành
+                    }
                 },
                 {
                     $project: {
-                        day: "$_id", // Đổi tên _id thành day
-                        totalRevenue: 1, // Giữ lại tổng doanh thu
-                        _id: 0, // Loại bỏ _id
-                    },
+                        created_at_vn: {
+                            $dateAdd: {
+                                startDate: "$created_at",
+                                unit: "hour",
+                                amount: 7 // Cộng thêm 7 giờ để chuyển sang giờ Việt Nam
+                            }
+                        },
+                        amount: 1
+                    }
                 },
+                {
+                    $group: {
+                        _id: { $dayOfMonth: "$created_at_vn" }, // Lấy ngày theo giờ Việt Nam
+                        totalRevenue: { $sum: "$amount" } // Tổng doanh thu theo ngày
+                    }
+                },
+                {
+                    $sort: { _id: 1 }
+                },
+                {
+                    $project: {
+                        day: "$_id",
+                        totalRevenue: 1,
+                        _id: 0
+                    }
+                }
             ]);
     
-            // Tạo một mảng với tất cả các ngày trong tháng
-            const allDays = Array.from({ length: new Date(year, month, 0).getDate() }, (_, index) => index + 1);
+            // Tạo một mảng chứa tất cả các ngày trong tháng
+            const totalDays = new Date(year, month, 0).getDate();
+            const allDays = Array.from({ length: totalDays }, (_, index) => index + 1);
     
-            // Dựng lại dữ liệu với tất cả các ngày trong tháng, gán doanh thu là 0 nếu ngày đó không có dữ liệu
+            // Đảm bảo danh sách ngày đầy đủ, gán doanh thu là 0 nếu ngày đó không có dữ liệu
             const revenueResult = allDays.map(day => {
                 const data = revenueByDay.find(item => item.day === day);
                 return {
                     day,
-                    totalRevenue: data ? data.totalRevenue : 0, // Nếu không có dữ liệu, gán doanh thu là 0
+                    totalRevenue: data ? data.totalRevenue : 0
                 };
             });
     
-            // Trả về kết quả
             return res.status(200).json({
                 month,
                 year,
-                revenueByDay: revenueResult,
+                revenueByDay: revenueResult
             });
     
         } catch (error) {
@@ -250,6 +268,7 @@ class StatisticController {
             return res.status(500).json({ message: "Internal server error" });
         }
     }
+    
 }
 
 module.exports = new StatisticController();
